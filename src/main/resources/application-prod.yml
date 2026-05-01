@@ -1,0 +1,9 @@
+logging:
+  level:
+    root: INFO
+    com.aiblog: INFO
+
+app:
+  cors:
+    allowed-origins:
+      - ${FRONTEND_ORIGIN:https://example.com}

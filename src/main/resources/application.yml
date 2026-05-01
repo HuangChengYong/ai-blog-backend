@@ -1,0 +1,67 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: ai-blog-backend
+  profiles:
+    active: local
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:ai_blog}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${MYSQL_USERNAME:ai_blog}
+    password: ${MYSQL_PASSWORD:ai_blog_password}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:ai_blog_redis}
+      database: ${REDIS_DATABASE:0}
+      timeout: 3s
+  liquibase:
+    change-log: classpath:/db/changelog/db.changelog-master.yaml
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 40MB
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  security:
+    jwt-secret: ${JWT_SECRET:replace-this-with-at-least-32-bytes-secret-key}
+    access-token-minutes: ${JWT_ACCESS_TOKEN_MINUTES:120}
+  cors:
+    allowed-origins:
+      - http://127.0.0.1:5173
+      - http://localhost:5173
+  storage:
+    active-provider: ${STORAGE_ACTIVE_PROVIDER:minio}
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+      access-key: ${MINIO_ROOT_USER:ai_blog_minio}
+      secret-key: ${MINIO_ROOT_PASSWORD:ai_blog_minio_password}
+      bucket: ${MINIO_BUCKET:ai-blog}
+      public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://127.0.0.1:9000}
