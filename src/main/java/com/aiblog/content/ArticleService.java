@@ -25,6 +25,7 @@ import com.aiblog.content.mapper.BlogTagMapper;
 import com.aiblog.content.mapper.BlogTopicMapper;
 import com.aiblog.content.mapper.BlogTopicTagMapper;
 import com.aiblog.security.SecurityUser;
+import com.aiblog.storage.StorageService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import java.time.LocalDateTime;
@@ -51,6 +52,7 @@ public class ArticleService {
   private final BlogTagMapper tagMapper;
   private final BlogTopicMapper topicMapper;
   private final BlogTopicTagMapper topicTagMapper;
+  private final StorageService storageService;
 
   public ArticleService(
       BlogArticleMapper articleMapper,
@@ -60,7 +62,8 @@ public class ArticleService {
       BlogCategoryMapper categoryMapper,
       BlogTagMapper tagMapper,
       BlogTopicMapper topicMapper,
-      BlogTopicTagMapper topicTagMapper
+      BlogTopicTagMapper topicTagMapper,
+      StorageService storageService
   ) {
     this.articleMapper = articleMapper;
     this.contentMapper = contentMapper;
@@ -70,6 +73,7 @@ public class ArticleService {
     this.tagMapper = tagMapper;
     this.topicMapper = topicMapper;
     this.topicTagMapper = topicTagMapper;
+    this.storageService = storageService;
   }
 
   public PageResult<ArticleResponse> publicArticles(long page, long size) {
@@ -104,6 +108,16 @@ public class ArticleService {
     return new PageResult<>(result.getCurrent(), result.getSize(), result.getTotal(), toResponses(result.getRecords(), true));
   }
 
+  public PageResult<ArticleResponse> adminArticlesByStatus(long page, long size, String status) {
+    Page<BlogArticle> result = articleMapper.selectPage(
+        Page.of(page, size),
+        new LambdaQueryWrapper<BlogArticle>()
+            .eq(BlogArticle::getStatus, status)
+            .orderByDesc(BlogArticle::getUpdatedAt)
+    );
+    return new PageResult<>(result.getCurrent(), result.getSize(), result.getTotal(), toResponses(result.getRecords(), true));
+  }
+
   @Transactional(rollbackFor = Exception.class)
   public ArticleResponse create(ArticleRequest request) {
     LocalDateTime now = LocalDateTime.now();
@@ -124,6 +138,7 @@ public class ArticleService {
     articleMapper.insert(article);
     upsertContent(article.getId(), request.content());
     replaceTags(article.getId(), request.tags());
+    storageService.syncArticleImages(article.getId(), request.content());
     return toResponse(articleMapper.selectById(article.getId()), true);
   }
 
@@ -137,6 +152,7 @@ public class ArticleService {
     articleMapper.updateById(article);
     upsertContent(article.getId(), request.content());
     replaceTags(article.getId(), request.tags());
+    storageService.syncArticleImages(article.getId(), request.content());
     return toResponse(articleMapper.selectById(id), true);
   }
 
@@ -194,6 +210,18 @@ public class ArticleService {
     article.setUpdatedAt(LocalDateTime.now());
     articleMapper.updateById(article);
     return toResponse(article, true);
+  }
+
+  @Transactional(rollbackFor = Exception.class)
+  public void delete(Long id) {
+    BlogArticle article = requireArticle(id);
+    if (ArticleStatus.LISTED.equals(article.getListingStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "已上架文章不能删除，请先下架");
+    }
+    storageService.deleteArticleImages(id);
+    contentMapper.delete(new LambdaQueryWrapper<BlogArticleContent>().eq(BlogArticleContent::getArticleId, id));
+    articleTagMapper.delete(new LambdaQueryWrapper<BlogArticleTag>().eq(BlogArticleTag::getArticleId, id));
+    articleMapper.deleteById(id);
   }
 
   public ArticleResponse generate(GenerateArticleRequest request) {

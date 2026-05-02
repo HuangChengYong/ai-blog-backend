@@ -5,6 +5,7 @@ import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import java.io.InputStream;
@@ -49,6 +50,18 @@ public class MinioStorageClient implements ObjectStorageClient {
       return new StoredObject(providerCode(), minio.bucket(), objectKey, contentType, size, stat.etag(), publicUrl);
     } catch (Exception exception) {
       throw new IllegalStateException("Failed to upload object to MinIO", exception);
+    }
+  }
+
+  @Override
+  public void delete(String bucketName, String objectKey) {
+    try {
+      minioClient.removeObject(RemoveObjectArgs.builder()
+          .bucket(bucketName)
+          .object(objectKey)
+          .build());
+    } catch (Exception exception) {
+      throw new IllegalStateException("Failed to delete object from MinIO", exception);
     }
   }
 

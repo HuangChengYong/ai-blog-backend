@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -64,6 +65,15 @@ public class ArticleController {
     return ApiResponse.ok(articleService.adminArticles(page, size));
   }
 
+  @PreAuthorize("hasAuthority('approval.review')")
+  @GetMapping("/admin/approvals/articles")
+  public ApiResponse<PageResult<ArticleResponse>> approvalArticles(
+      @RequestParam(defaultValue = "1") long page,
+      @RequestParam(defaultValue = "100") long size
+  ) {
+    return ApiResponse.ok(articleService.adminArticlesByStatus(page, size, ArticleStatus.REVIEW));
+  }
+
   @RepeatSubmit
   @PreAuthorize("hasAuthority('article.create')")
   @PostMapping("/admin/articles")
@@ -111,5 +121,13 @@ public class ArticleController {
   @PatchMapping("/admin/articles/{id}/listing")
   public ApiResponse<ArticleResponse> listing(@PathVariable Long id, @Valid @RequestBody ListingRequest request) {
     return ApiResponse.ok(articleService.listing(id, request.listingStatus()));
+  }
+
+  @RepeatSubmit
+  @PreAuthorize("hasAuthority('article.delete')")
+  @DeleteMapping("/admin/articles/{id}")
+  public ApiResponse<Void> delete(@PathVariable Long id) {
+    articleService.delete(id);
+    return ApiResponse.ok();
   }
 }
