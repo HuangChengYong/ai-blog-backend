@@ -4,6 +4,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
@@ -18,9 +19,12 @@ public class GlobalExceptionHandler {
   private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
   @ExceptionHandler(BusinessException.class)
-  @ResponseStatus(HttpStatus.BAD_REQUEST)
-  public ApiResponse<Void> business(BusinessException exception) {
-    return ApiResponse.error(exception.errorCode().code(), exception.getMessage());
+  public ResponseEntity<ApiResponse<Void>> business(BusinessException exception) {
+    log.warn("Business exception intercepted: code={}, status={}, message={}",
+        exception.getCode(), exception.getHttpStatus().value(), exception.getMessage());
+    return ResponseEntity
+        .status(exception.getHttpStatus())
+        .body(ApiResponse.error(exception.getCode(), exception.getMessage()));
   }
 
   @ExceptionHandler(BadCredentialsException.class)

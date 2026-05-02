@@ -40,7 +40,8 @@ public class StorageService {
 
   @Transactional(rollbackFor = Exception.class)
   public StorageObject upload(MultipartFile file) {
-    String objectKey = "uploads/" + LocalDateTime.now().toLocalDate() + "/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
+    String originalName = safeOriginalName(file.getOriginalFilename());
+    String objectKey = "uploads/" + LocalDateTime.now().toLocalDate() + "/" + UUID.randomUUID() + "-" + originalName;
     try {
       StoredObject stored = providerFactory.activeClient()
           .put(objectKey, file.getInputStream(), file.getSize(), file.getContentType());
@@ -48,7 +49,7 @@ public class StorageService {
       object.setProviderCode(stored.providerCode());
       object.setBucketName(stored.bucketName());
       object.setObjectKey(stored.objectKey());
-      object.setOriginalName(file.getOriginalFilename());
+      object.setOriginalName(originalName);
       object.setContentType(stored.contentType());
       object.setSizeBytes(stored.sizeBytes());
       object.setEtag(stored.etag());
@@ -113,6 +114,18 @@ public class StorageService {
       ids.add(Long.valueOf(matcher.group(1)));
     }
     return ids;
+  }
+
+  private String safeOriginalName(String originalName) {
+    if (originalName == null || originalName.isBlank()) {
+      return "file";
+    }
+    String normalized = originalName.replace("\\", "/");
+    String fileName = normalized.substring(normalized.lastIndexOf('/') + 1).trim();
+    if (fileName.isBlank()) {
+      return "file";
+    }
+    return fileName.replaceAll("[\\r\\n]", "_");
   }
 
   private LambdaQueryWrapper<StorageObjectRef> articleRefQuery(Long articleId) {
