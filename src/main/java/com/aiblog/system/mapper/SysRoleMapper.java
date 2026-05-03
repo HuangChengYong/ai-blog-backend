@@ -26,4 +26,15 @@ public interface SysRoleMapper extends BaseMapper<SysRole> {
       order by p.id asc
       """)
   List<String> selectPermissionNamesByRoleId(Long roleId);
+
+  @Select("""
+      select p.code
+      from sys_permission p
+      join sys_role_permission rp on rp.permission_id = p.id
+      where rp.role_id = #{roleId}
+        and p.deleted = 0
+        and p.status = 1
+      order by p.id asc
+      """)
+  List<String> selectPermissionCodesByRoleId(Long roleId);
 }

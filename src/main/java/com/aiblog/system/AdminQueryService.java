@@ -12,15 +12,21 @@ import com.aiblog.system.entity.SysUser;
 import com.aiblog.system.mapper.SysMenuMapper;
 import com.aiblog.system.mapper.SysPermissionMapper;
 import com.aiblog.system.mapper.SysRoleMapper;
+import com.aiblog.system.mapper.SysRolePermissionMapper;
 import com.aiblog.system.mapper.SysUserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AdminQueryService {
@@ -31,6 +37,7 @@ public class AdminQueryService {
   private final BlogTagMapper tagMapper;
   private final SysUserMapper userMapper;
   private final SysRoleMapper roleMapper;
+  private final SysRolePermissionMapper rolePermissionMapper;
   private final SysPermissionMapper permissionMapper;
   private final SysMenuMapper menuMapper;
 
@@ -39,6 +46,7 @@ public class AdminQueryService {
       BlogTagMapper tagMapper,
       SysUserMapper userMapper,
       SysRoleMapper roleMapper,
+      SysRolePermissionMapper rolePermissionMapper,
       SysPermissionMapper permissionMapper,
       SysMenuMapper menuMapper
   ) {
@@ -46,6 +54,7 @@ public class AdminQueryService {
     this.tagMapper = tagMapper;
     this.userMapper = userMapper;
     this.roleMapper = roleMapper;
+    this.rolePermissionMapper = rolePermissionMapper;
     this.permissionMapper = permissionMapper;
     this.menuMapper = menuMapper;
   }
@@ -103,9 +112,65 @@ public class AdminQueryService {
             role.getRoleName(),
             roleMapper.countUsersByRoleId(role.getId()),
             role.getDescription(),
-            roleMapper.selectPermissionNamesByRoleId(role.getId()).stream().limit(6).toList()
+            roleMapper.selectPermissionNamesByRoleId(role.getId()).stream().limit(6).toList(),
+            roleMapper.selectPermissionCodesByRoleId(role.getId()).stream().limit(6).toList()
         ))
         .toList();
+  }
+
+  public AdminRoleResponse role(Long id) {
+    SysRole role = roleMapper.selectById(id);
+    if (role == null || Integer.valueOf(1).equals(role.getDeleted())) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Role not found");
+    }
+
+    return new AdminRoleResponse(
+        idOf(role.getId()),
+        role.getRoleName(),
+        roleMapper.countUsersByRoleId(role.getId()),
+        role.getDescription(),
+        roleMapper.selectPermissionNamesByRoleId(role.getId()),
+        roleMapper.selectPermissionCodesByRoleId(role.getId())
+    );
+  }
+
+  @Transactional
+  public AdminRoleResponse updateRole(Long id, UpdateRoleRequest request) {
+    SysRole role = roleMapper.selectById(id);
+    if (role == null || Integer.valueOf(1).equals(role.getDeleted())) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Role not found");
+    }
+    if (request.name() == null || request.name().isBlank()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Role name is required");
+    }
+
+    role.setRoleName(request.name().trim());
+    role.setDescription(request.description() == null ? "" : request.description().trim());
+    role.setUpdatedAt(LocalDateTime.now());
+    roleMapper.updateById(role);
+
+    Set<String> permissionCodes = new LinkedHashSet<>(request.permissionCodes() == null ? List.of() : request.permissionCodes());
+    List<SysPermission> permissions = permissionCodes.isEmpty()
+        ? List.of()
+        : permissionMapper.selectList(new LambdaQueryWrapper<SysPermission>()
+            .in(SysPermission::getCode, permissionCodes)
+            .eq(SysPermission::getStatus, 1)
+        );
+    if (permissions.size() != permissionCodes.size()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid permission codes");
+    }
+
+    rolePermissionMapper.delete(new LambdaQueryWrapper<com.aiblog.system.entity.SysRolePermission>()
+        .eq(com.aiblog.system.entity.SysRolePermission::getRoleId, role.getId()));
+    for (SysPermission permission : permissions) {
+      com.aiblog.system.entity.SysRolePermission rolePermission = new com.aiblog.system.entity.SysRolePermission();
+      rolePermission.setRoleId(role.getId());
+      rolePermission.setPermissionId(permission.getId());
+      rolePermission.setCreatedAt(LocalDateTime.now());
+      rolePermissionMapper.insert(rolePermission);
+    }
+
+    return role(role.getId());
   }
 
   public List<AdminPermissionGroupResponse> permissions() {
@@ -188,7 +253,17 @@ public class AdminQueryService {
   public record AdminUserResponse(String id, String name, String role, String status, String scope, String lastSeen) {
   }
 
-  public record AdminRoleResponse(String id, String name, long users, String description, List<String> permissions) {
+  public record AdminRoleResponse(
+      String id,
+      String name,
+      long users,
+      String description,
+      List<String> permissions,
+      List<String> permissionCodes
+  ) {
+  }
+
+  public record UpdateRoleRequest(String name, String description, List<String> permissionCodes) {
   }
 
   public record AdminPermissionItemResponse(String code, String name, String description) {
