@@ -16,6 +16,8 @@ public interface AdminUserService {
 
     AdminUserResponse toggleStatus(Long id, Integer status);
 
+    AdminUserResponse assignRole(Long id, AssignRoleRequest request);
+
     record AdminUserResponse(
             String id,
             String name,
@@ -31,4 +33,5 @@ public interface AdminUserService {
     ) {}
     record CreateUserRequest(String username, String password, String nickname, String avatarUrl, String roleId, String dataScope, Integer status) {}
     record UpdateUserRequest(String username, String password, String nickname, String avatarUrl, String roleId, String dataScope, Integer status) {}
+    record AssignRoleRequest(String roleId) {}
 }

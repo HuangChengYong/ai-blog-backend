@@ -58,4 +58,12 @@ public class AdminUserController {
             @RequestParam Integer status) {
         return ApiResponse.ok(adminUserService.toggleStatus(id, status));
     }
+
+    @PreAuthorize("hasAuthority('user.update')")
+    @PutMapping("/{id}/role")
+    public ApiResponse<AdminUserService.AdminUserResponse> assignRole(
+            @PathVariable Long id,
+            @RequestBody AdminUserService.AssignRoleRequest request) {
+        return ApiResponse.ok(adminUserService.assignRole(id, request));
+    }
 }

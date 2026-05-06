@@ -36,7 +36,9 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     @Override
     public List<AdminUserResponse> users() {
-        return userMapper.selectList(new LambdaQueryWrapper<SysUser>().orderByAsc(SysUser::getId))
+        return userMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getDeleted, 0)
+                        .orderByAsc(SysUser::getId))
                 .stream()
                 .map(user -> toResponse(user))
                 .toList();
@@ -44,10 +46,7 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     @Override
     public AdminUserResponse user(Long id) {
-        SysUser user = userMapper.selectById(id);
-        if (user == null || Integer.valueOf(1).equals(user.getDeleted())) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
+        SysUser user = findActiveUser(id);
         return toResponse(user);
     }
 
@@ -77,14 +76,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         user.setUpdatedAt(LocalDateTime.now());
         userMapper.insert(user);
 
-        Long roleId = resolveCreateRoleId(request.roleId());
-        if (roleId != null) {
-            SysUserRole userRole = new SysUserRole();
-            userRole.setUserId(user.getId());
-            userRole.setRoleId(roleId);
-            userRole.setCreatedAt(LocalDateTime.now());
-            userRoleMapper.insert(userRole);
-        }
+        replaceUserRole(user.getId(), resolveCreateRoleId(request.roleId()));
 
         return toResponse(user);
     }
@@ -92,10 +84,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     @Transactional
     @Override
     public AdminUserResponse updateUser(Long id, UpdateUserRequest request) {
-        SysUser user = userMapper.selectById(id);
-        if (user == null || Integer.valueOf(1).equals(user.getDeleted())) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
+        SysUser user = findActiveUser(id);
         if (request.username() != null && !request.username().isBlank()) {
             SysUser existing = userMapper.selectOne(new LambdaQueryWrapper<SysUser>()
                     .eq(SysUser::getUsername, request.username())
@@ -125,15 +114,7 @@ public class AdminUserServiceImpl implements AdminUserService {
         userMapper.updateById(user);
 
         if (request.roleId() != null) {
-            userRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, user.getId()));
-            if (!request.roleId().isBlank()) {
-                Long roleId = parseRoleId(request.roleId());
-                SysUserRole userRole = new SysUserRole();
-                userRole.setUserId(user.getId());
-                userRole.setRoleId(roleId);
-                userRole.setCreatedAt(LocalDateTime.now());
-                userRoleMapper.insert(userRole);
-            }
+            replaceUserRole(user.getId(), request.roleId().isBlank() ? null : parseRoleId(request.roleId()));
         }
 
         return toResponse(user);
@@ -142,27 +123,38 @@ public class AdminUserServiceImpl implements AdminUserService {
     @Transactional
     @Override
     public void deleteUser(Long id) {
-        SysUser user = userMapper.selectById(id);
-        if (user == null || Integer.valueOf(1).equals(user.getDeleted())) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
-        user.setDeleted(1);
-        user.setUpdatedAt(LocalDateTime.now());
-        userMapper.updateById(user);
+        SysUser user = findActiveUser(id);
+        userMapper.deleteById(id);
         userRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, id));
     }
 
     @Transactional
     @Override
     public AdminUserResponse toggleStatus(Long id, Integer status) {
-        SysUser user = userMapper.selectById(id);
-        if (user == null || Integer.valueOf(1).equals(user.getDeleted())) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
-        }
+        SysUser user = findActiveUser(id);
         user.setStatus(status);
         user.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(user);
         return toResponse(user);
+    }
+
+    @Transactional
+    @Override
+    public AdminUserResponse assignRole(Long id, AssignRoleRequest request) {
+        SysUser user = findActiveUser(id);
+        Long roleId = request.roleId() == null || request.roleId().isBlank() ? null : parseRoleId(request.roleId());
+        replaceUserRole(user.getId(), roleId);
+        user.setUpdatedAt(LocalDateTime.now());
+        userMapper.updateById(user);
+        return toResponse(user);
+    }
+
+    private SysUser findActiveUser(Long id) {
+        SysUser user = userMapper.selectById(id);
+        if (user == null || Integer.valueOf(1).equals(user.getDeleted())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found");
+        }
+        return user;
     }
 
     private AdminUserResponse toResponse(SysUser user) {
@@ -205,6 +197,18 @@ public class AdminUserServiceImpl implements AdminUserService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid role id");
         }
         return roleId;
+    }
+
+    private void replaceUserRole(Long userId, Long roleId) {
+        userRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, userId));
+        if (roleId == null) {
+            return;
+        }
+        SysUserRole userRole = new SysUserRole();
+        userRole.setUserId(userId);
+        userRole.setRoleId(roleId);
+        userRole.setCreatedAt(LocalDateTime.now());
+        userRoleMapper.insert(userRole);
     }
 
     private String blankToNull(String value) {
