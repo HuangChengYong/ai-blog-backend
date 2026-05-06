@@ -8,6 +8,9 @@ public record LoginResponse(
     String userId,
     String username,
     String nickname,
+    String avatarUrl,
+    String roleName,
+    String dataScope,
     List<String> permissions
 ) {
 }

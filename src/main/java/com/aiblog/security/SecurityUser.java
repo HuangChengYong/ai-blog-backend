@@ -28,6 +28,14 @@ public class SecurityUser implements UserDetails {
     return user.getNickname();
   }
 
+  public String avatarUrl() {
+    return user.getAvatarUrl();
+  }
+
+  public String dataScope() {
+    return user.getDataScope();
+  }
+
   @Override
   public Collection<? extends GrantedAuthority> getAuthorities() {
     return authorities;

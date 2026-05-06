@@ -44,10 +44,17 @@ public class AdminCurrentController {
 
   @GetMapping
   public ApiResponse<CurrentUserResponse> current(@AuthenticationPrincipal SecurityUser user) {
+    String roleName = userMapper.selectPrimaryRoleNameByUserId(user.id());
+    if (roleName == null || roleName.isBlank()) {
+      roleName = "未分配角色";
+    }
     CurrentUserResponse response = new CurrentUserResponse(
         String.valueOf(user.id()),
         user.getUsername(),
         user.nickname(),
+        user.avatarUrl(),
+        roleName,
+        user.dataScope(),
         permissionMapper.selectPermissionCodesByUserId(user.id()),
         menuMapper.selectVisibleMenusByUserId(user.id())
     );

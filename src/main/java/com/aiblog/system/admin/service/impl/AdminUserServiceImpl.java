@@ -1,8 +1,10 @@
 package com.aiblog.system.admin.service.impl;
 
 import com.aiblog.system.admin.service.AdminUserService;
+import com.aiblog.system.entity.SysRole;
 import com.aiblog.system.entity.SysUserRole;
 import com.aiblog.system.entity.SysUser;
+import com.aiblog.system.mapper.SysRoleMapper;
 import com.aiblog.system.mapper.SysUserMapper;
 import com.aiblog.system.mapper.SysUserRoleMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -22,11 +24,13 @@ public class AdminUserServiceImpl implements AdminUserService {
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private final SysUserMapper userMapper;
     private final SysUserRoleMapper userRoleMapper;
+    private final SysRoleMapper roleMapper;
     private final PasswordEncoder passwordEncoder;
 
-    public AdminUserServiceImpl(SysUserMapper userMapper, SysUserRoleMapper userRoleMapper, PasswordEncoder passwordEncoder) {
+    public AdminUserServiceImpl(SysUserMapper userMapper, SysUserRoleMapper userRoleMapper, SysRoleMapper roleMapper, PasswordEncoder passwordEncoder) {
         this.userMapper = userMapper;
         this.userRoleMapper = userRoleMapper;
+        this.roleMapper = roleMapper;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -65,17 +69,19 @@ public class AdminUserServiceImpl implements AdminUserService {
         user.setUsername(request.username().trim());
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setNickname(request.nickname() == null || request.nickname().isBlank() ? request.username().trim() : request.nickname().trim());
+        user.setAvatarUrl(blankToNull(request.avatarUrl()));
         user.setDataScope(request.dataScope() == null || request.dataScope().isBlank() ? "SELF" : request.dataScope());
-        user.setStatus(1);
+        user.setStatus(request.status() == null ? 1 : request.status());
         user.setUserType("NORMAL");
         user.setCreatedAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
         userMapper.insert(user);
 
-        if (request.roleId() != null && !request.roleId().isBlank()) {
+        Long roleId = resolveCreateRoleId(request.roleId());
+        if (roleId != null) {
             SysUserRole userRole = new SysUserRole();
             userRole.setUserId(user.getId());
-            userRole.setRoleId(Long.valueOf(request.roleId()));
+            userRole.setRoleId(roleId);
             userRole.setCreatedAt(LocalDateTime.now());
             userRoleMapper.insert(userRole);
         }
@@ -106,19 +112,28 @@ public class AdminUserServiceImpl implements AdminUserService {
         if (request.nickname() != null && !request.nickname().isBlank()) {
             user.setNickname(request.nickname().trim());
         }
+        if (request.avatarUrl() != null) {
+            user.setAvatarUrl(blankToNull(request.avatarUrl()));
+        }
         if (request.dataScope() != null && !request.dataScope().isBlank()) {
             user.setDataScope(request.dataScope());
+        }
+        if (request.status() != null) {
+            user.setStatus(request.status());
         }
         user.setUpdatedAt(LocalDateTime.now());
         userMapper.updateById(user);
 
-        if (request.roleId() != null && !request.roleId().isBlank()) {
+        if (request.roleId() != null) {
             userRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>().eq(SysUserRole::getUserId, user.getId()));
-            SysUserRole userRole = new SysUserRole();
-            userRole.setUserId(user.getId());
-            userRole.setRoleId(Long.valueOf(request.roleId()));
-            userRole.setCreatedAt(LocalDateTime.now());
-            userRoleMapper.insert(userRole);
+            if (!request.roleId().isBlank()) {
+                Long roleId = parseRoleId(request.roleId());
+                SysUserRole userRole = new SysUserRole();
+                userRole.setUserId(user.getId());
+                userRole.setRoleId(roleId);
+                userRole.setCreatedAt(LocalDateTime.now());
+                userRoleMapper.insert(userRole);
+            }
         }
 
         return toResponse(user);
@@ -151,14 +166,49 @@ public class AdminUserServiceImpl implements AdminUserService {
     }
 
     private AdminUserResponse toResponse(SysUser user) {
+        Long roleId = userMapper.selectPrimaryRoleIdByUserId(user.getId());
         return new AdminUserResponse(
                 user.getId() == null ? null : String.valueOf(user.getId()),
                 user.getUsername(),
+                user.getNickname(),
+                user.getAvatarUrl(),
+                roleId == null ? "" : String.valueOf(roleId),
                 roleName(user.getId()),
                 Integer.valueOf(1).equals(user.getStatus()) ? "启用" : "停用",
+                user.getStatus(),
                 dataScope(user.getDataScope()),
+                user.getDataScope(),
                 formatLastSeen(user.getLastLoginAt())
         );
+    }
+
+    private Long resolveCreateRoleId(String requestedRoleId) {
+        if (requestedRoleId != null && !requestedRoleId.isBlank()) {
+            return parseRoleId(requestedRoleId);
+        }
+        SysRole defaultRole = roleMapper.selectOne(new LambdaQueryWrapper<SysRole>()
+                .eq(SysRole::getRoleCode, "CONTENT_EDITOR")
+                .eq(SysRole::getStatus, 1)
+                .eq(SysRole::getDeleted, 0));
+        return defaultRole == null ? null : defaultRole.getId();
+    }
+
+    private Long parseRoleId(String rawRoleId) {
+        Long roleId;
+        try {
+            roleId = Long.valueOf(rawRoleId);
+        } catch (NumberFormatException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid role id");
+        }
+        SysRole role = roleMapper.selectById(roleId);
+        if (role == null || Integer.valueOf(1).equals(role.getDeleted()) || !Integer.valueOf(1).equals(role.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid role id");
+        }
+        return roleId;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private String roleName(Long userId) {
